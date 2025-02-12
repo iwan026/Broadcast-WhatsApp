@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  bcast-wa:
+    container_name: bcast-wa
+    build: .
+    restart: always
+    volumes:
+      - .:/app
+      - ./auth:/app/auth
+    working_dir: /app
+    command: ["node", "bcast.js"]
