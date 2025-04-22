@@ -1,36 +1,37 @@
-const { makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
-const { inisialisasiPenyimpanan } = require('./services/penyimpanan');
-const handlerPesan = require('./handlers/handlerPesan');
-const handlerKoneksi = require('./handlers/handlerKoneksi');
-const pengaturan = require('./config/pengaturan');
-const logger = require('./utils/logger');
+// File utama untuk menjalankan bot
+const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const pino = require('pino');
+const handleMessages = require('./handlers/messages');
+const handleConnectionUpdate = require('./handlers/connection');
 
-async function mulaiSock() {
-logger.info('Memulai bot WhatsApp...');
-inisialisasiPenyimpanan();
-
+async function startSock() {
+console.log('Memulai bot...');
 try {
 const { state, saveCreds } = await useMultiFileAuthState('./auth');
 const { version } = await fetchLatestBaileysVersion();
-logger.info(`Menggunakan versi Baileys: ${version}`);
+console.log('Versi Baileys:', version);
 
 const sock = makeWASocket({
 version,
 auth: state,
 printQRInTerminal: true,
-logger: logger.child({ module: 'baileys' })
+logger: pino({ level: 'silent' }),
 });
 
-// Penangan event
 sock.ev.on('creds.update', saveCreds);
-sock.ev.on('messages.upsert', handlerPesan(sock));
-sock.ev.on('connection.update', handlerKoneksi(sock));
+sock.ev.on('messages.upsert', handleMessages(sock));
+sock.ev.on('connection.update', handleConnectionUpdate(sock));
 
 } catch (error) {
-logger.error('Error memulai bot:', error);
-logger.info('Menghubungkan ulang dalam 60 detik...');
-setTimeout(mulaiSock, 60000);
+console.error('Terjadi kesalahan saat memulai bot:', error.message);
+console.log('Mencoba menghubungkan ulang dalam 60 detik...');
+setTimeout(startSock, 60000);
 }
 }
 
-mulaiSock();
+// Export untuk bisa digunakan oleh handler koneksi
+module.exports = {
+startSock
+};
+
+startSock();
