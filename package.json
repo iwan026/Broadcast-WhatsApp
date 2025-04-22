@@ -1,0 +1,16 @@
+{
+  "name": "bcast",
+  "version": "1.0.0",
+  "description": "Broadcast WhatsApp",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Iwan Setiawan",
+  "license": "ISC",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.17.16",
+    "pino": "^9.6.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
