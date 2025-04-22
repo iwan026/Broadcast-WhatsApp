@@ -1,37 +1,96 @@
-// File utama untuk menjalankan bot
-const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason } = require('@whiskeysockets/baileys');
 const pino = require('pino');
-const handleMessages = require('./handlers/messages');
-const handleConnectionUpdate = require('./handlers/connection');
+const path = require('path');
+const handleMessages = require('./handlers/messages'); // Pindahkan require ke sini
 
-async function startSock() {
-console.log('Memulai bot...');
+// Polyfill crypto
+const crypto = require('crypto');
+globalThis.crypto = crypto;
+
+let sockInstance = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 10;
+const RECONNECT_INTERVAL = 30000;
+
+async function initializeSock() {
 try {
-const { state, saveCreds } = await useMultiFileAuthState('./auth');
-const { version } = await fetchLatestBaileysVersion();
-console.log('Versi Baileys:', version);
+console.log('Memulai inisialisasi bot...');
 
-const sock = makeWASocket({
+// Cleanup previous instance
+if (sockInstance) {
+sockInstance.ev.removeAllListeners();
+sockInstance.ws.close();
+sockInstance = null;
+}
+
+const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, 'auth'));
+const { version } = await fetchLatestBaileysVersion();
+
+sockInstance = makeWASocket({
 version,
 auth: state,
 printQRInTerminal: true,
-logger: pino({ level: 'silent' }),
+logger: pino({ level: 'error' }),
+browser: ['Yuipedia Bot', 'Safari', '1.0.0'],
+syncFullHistory: false,
+markOnlineOnConnect: false,
+generateHighQualityLinkPreview: false,
+getMessage: async () => undefined
 });
 
-sock.ev.on('creds.update', saveCreds);
-sock.ev.on('messages.upsert', handleMessages(sock));
-sock.ev.on('connection.update', handleConnectionUpdate(sock));
+// Setup event listeners
+sockInstance.ev.on('creds.update', saveCreds);
+sockInstance.ev.on('connection.update', handleConnectionUpdate);
+sockInstance.ev.on('messages.upsert', handleMessages(sockInstance)); // Pindahkan ke sini
+
+reconnectAttempts = 0;
+return sockInstance;
 
 } catch (error) {
-console.error('Terjadi kesalahan saat memulai bot:', error.message);
-console.log('Mencoba menghubungkan ulang dalam 60 detik...');
-setTimeout(startSock, 60000);
+console.error('Inisialisasi gagal:', error.message);
+throw error;
 }
 }
 
-// Export untuk bisa digunakan oleh handler koneksi
-module.exports = {
-startSock
-};
+function handleConnectionUpdate(update) {
+try {
+const { connection, lastDisconnect } = update;
 
-startSock();
+if (connection === 'close') {
+const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+
+if (shouldReconnect) {
+if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+reconnectAttempts++;
+const delay = Math.min(RECONNECT_INTERVAL * reconnectAttempts, 300000); // Maksimal 5 menit
+console.log(`Mencoba reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}) dalam ${delay/1000} detik...`);
+setTimeout(initializeSock, delay);
+} else {
+console.error('Maksimum percobaan reconnect tercapai');
+}
+}
+} else if (connection === 'open') {
+reconnectAttempts = 0; // Reset counter jika berhasil terkoneksi
+}
+} catch (error) {
+console.error('Error handleConnectionUpdate:', error);
+}
+}
+
+// Handle process events
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
+
+function gracefulShutdown() {
+console.log('\nShutting down gracefully...');
+if (sockInstance) {
+sockInstance.ev.removeAllListeners();
+sockInstance.ws.close();
+}
+process.exit(0);
+}
+
+module.exports = initializeSock;
+
+// Start the bot
+initializeSock().catch(console.error);

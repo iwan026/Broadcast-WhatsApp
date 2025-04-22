@@ -5,7 +5,6 @@ BROADCAST_DELAY_RANGE: {
 MIN: 30000,
 MAX: 600000
 },
-
 GROUP_LINKS: {
 STORAGE_FILE: './data/group_links.json',
 NOTIFY_THRESHOLD: 5, 
